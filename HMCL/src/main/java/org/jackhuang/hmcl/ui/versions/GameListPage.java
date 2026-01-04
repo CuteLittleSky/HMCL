@@ -17,13 +17,20 @@
  */
 package org.jackhuang.hmcl.ui.versions;
 
+import com.jfoenix.controls.JFXTextField;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.scene.Node;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.GridPane;
+import javafx.geometry.Insets;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.jackhuang.hmcl.game.HMCLGameRepository;
@@ -40,6 +47,7 @@ import org.jackhuang.hmcl.util.javafx.MappedObservableList;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Arrays;
 import java.util.stream.Collectors;
 
 import static org.jackhuang.hmcl.ui.FXUtils.runInFX;
@@ -124,12 +132,27 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
     }
 
     private class GameList extends ListPageBase<GameListItem> {
+        private final ObservableList<GameListItem> allItems = FXCollections.observableArrayList();
+        private final FilteredList<GameListItem> filteredItems = new FilteredList<>(allItems);
+
         public GameList() {
             super();
+
+            setItems(filteredItems);
 
             Profiles.registerVersionsListener(this::loadVersions);
 
             setOnFailedAction(e -> Controllers.navigate(Controllers.getDownloadPage()));
+        }
+
+        public void setFilterText(String filterText) {
+            String query = filterText == null ? "" : filterText.trim().toLowerCase();
+            filteredItems.setPredicate(item -> {
+                if (query.isEmpty()) {
+                    return true;
+                }
+                return item.getVersion().toLowerCase().contains(query);
+            });
         }
 
         private void loadVersions(Profile profile) {
@@ -145,8 +168,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
                     List<GameListItem> children = repository.getDisplayVersions()
                             .map(version -> new GameListItem(toggleGroup, profile, version.getId()))
                             .collect(Collectors.toList());
-                    itemsProperty().setAll(children);
-                    children.forEach(GameListItem::checkSelection);
+                    allItems.setAll(children);
+                    allItems.forEach(GameListItem::checkSelection);
 
                     if (children.isEmpty()) {
                         setFailedReason(i18n("version.empty.hint"));
@@ -154,8 +177,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
 
                     profile.selectedVersionProperty().addListener(listenerHolder.weak((a, b, newValue) -> {
                         FXUtils.checkFxUserThread();
-                        children.forEach(it -> it.selectedProperty().set(false));
-                        children.stream()
+                        allItems.forEach(it -> it.selectedProperty().set(false));
+                        allItems.stream()
                                 .filter(it -> it.getVersion().equals(newValue))
                                 .findFirst()
                                 .ifPresent(it -> it.selectedProperty().set(true));
@@ -186,7 +209,24 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
 
             @Override
             protected List<Node> initializeToolbar(GameList skinnable) {
-                return Collections.emptyList();
+                GridPane searchPane = new GridPane();
+                searchPane.getStyleClass().add("card");
+                searchPane.setPadding(new Insets(10));
+                searchPane.setHgap(16);
+                searchPane.setVgap(10);
+
+                Label label = new Label(i18n("version.search"));
+
+                JFXTextField searchField = new JFXTextField();
+                searchField.setPromptText(i18n("version.search.prompt"));
+                searchField.setMaxWidth(Double.MAX_VALUE);
+                searchField.textProperty().addListener((observable, oldValue, newValue) -> skinnable.setFilterText(newValue));
+
+                searchPane.addRow(0, label, searchField);
+                GridPane.setHgrow(searchField, Priority.ALWAYS);
+                HBox.setHgrow(searchPane, Priority.ALWAYS);
+
+                return Arrays.asList(searchPane);
             }
         }
     }
